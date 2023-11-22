@@ -1,9 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/streadway/amqp"
+	"golang.org/x/oauth2"
+	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 )
@@ -15,6 +20,14 @@ const (
 	replyQueue  = "reply_queue"
 )
 
+var oauthConfig = &oauth2.Config{
+	ClientID:     "000000",
+	ClientSecret: "999999",
+	Endpoint: oauth2.Endpoint{
+		TokenURL: "http://localhost:9096/token",
+	},
+}
+
 func failOnError(err error, msg string) {
 	if err != nil {
 		log.Fatalf("%s: %s", msg, err)
@@ -22,6 +35,11 @@ func failOnError(err error, msg string) {
 }
 
 func main() {
+
+	// Obtain OAuth2 token
+	token, err := getOAuthToken()
+	failOnError(err, "Failed to obtain OAuth2 token")
+	log.Printf("token %v \n", token.AccessToken)
 
 	// Connect to RabbitMQ server
 	conn, err := amqp.Dial(rabbitMQURL)
@@ -54,20 +72,6 @@ func main() {
 	)
 	failOnError(err, "Failed to declare a queue")
 
-	// Declare a reply queue
-	//replyQ, err := ch.QueueDeclare(
-	//	"",    // Queue name
-	//	false, // Durable
-	//	false, // Delete when unused
-	//	false, // Exclusive
-	//	false, // No-wait
-	//	nil,   // Arguments
-	//)
-	//failOnError(err, "Failed to declare a reply queue")
-
-	// Publish a message to the queue
-	//body := "Hello, test!"
-
 	msgs, err := ch.Consume(
 		q.Name, // queue
 		"",     // consumer
@@ -89,7 +93,10 @@ func main() {
 			ContentType:   "text/plain",
 			CorrelationId: corrId,
 			ReplyTo:       q.Name,
-			Body:          []byte(body),
+			Headers: amqp.Table{
+				"Authorization": token.AccessToken,
+			},
+			Body: []byte(body),
 		},
 	)
 	failOnError(err, "Failed to publish a message")
@@ -112,4 +119,37 @@ func bodyFrom(args []string) string {
 		s = strings.Join(args[1:], " ")
 	}
 	return s
+}
+
+// Function to obtain OAuth2 token
+func getOAuthToken() (*oauth2.Token, error) {
+	// Build the request URL
+	url := "http://localhost:9096/token?grant_type=client_credentials&client_id=000000&client_secret=999999&scope=read"
+
+	// Make the HTTP request
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
+
+	// Read the response body
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the JSON response
+	var token oauth2.Token
+	err = json.Unmarshal(body, &token)
+	if err != nil {
+		return nil, err
+	}
+
+	return &token, nil
 }

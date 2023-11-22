@@ -63,6 +63,17 @@ func main() {
 
 	go func() {
 		for d := range msg {
+
+			token, _ := d.Headers["Authorization"].(string)
+			log.Printf("Received token %v\n", token)
+
+			if token != "ZJE3MZRLNTKTNWRIZS0ZYZQ1LTLHYZCTNDDKZTI0ZTQ1ODLL" {
+				log.Println("Invalid Oauth2 token")
+				continue
+			} else {
+				log.Println("valid Oauth2 token")
+
+			}
 			log.Printf("Received a message: %s", d.Body)
 			dotCount := bytes.Count(d.Body, []byte(".")) // Count the dots in the message
 			t := time.Duration(dotCount)
